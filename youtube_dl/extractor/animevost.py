@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 
 import re
+import requests
 
 
 from .common import InfoExtractor
@@ -43,8 +44,8 @@ class AnimevostIE(InfoExtractor):
     }]
 
     _VALID_URL = r'http://animevost\.org/tip/[-\w\d]+/(\d+)-[-\w\d]+\.html'
-    _TITLE_PATTERN = r'<meta property="og:title" content="([-\s\d\w/:]+)\['
-    _DATA_PATTERN = r'var data = \{([-\d\w\s,":]+),};'
+    _TITLE_PATTERN = r'<meta property="og:title" content="([-\s\d\w/:!()]+)\['
+    _DATA_PATTERN = r'var data = \{([-\d\w\s,":]+)\};'
 
     def _real_extract(self, url):
         anime_id = self._search_regex(self._VALID_URL, url, 'anime id', flags=re.UNICODE)
@@ -53,6 +54,7 @@ class AnimevostIE(InfoExtractor):
         anime_title = self._html_search_regex(self._TITLE_PATTERN, anime_page, 'anime title', flags=re.UNICODE)
 
         data_str = self._html_search_regex(self._DATA_PATTERN, anime_page, 'anime series', flags=re.UNICODE)
+        if data_str[-1] == ',': data_str = data_str[:-1]
         data = self._parse_json("{%s}" % data_str, '')
 
         entries = self.__entries(data, anime_title)
@@ -79,8 +81,7 @@ class AnimevostEntryIE(InfoExtractor):
         files_str = self._html_search_regex(self._FLASHVARS_PATTERN, player_page, 'flash vars', flags=re.UNICODE)
         files = self._parse_json("{%s}" % files_str, eid)
 
-        raw_url = files['filehd'] if 'filehd' in files else files['file']
-        video_url = raw_url.partition(":hls")[0]
+        video_url = self.__url_by_files(files)
 
         return {
             'id': eid,
@@ -88,3 +89,14 @@ class AnimevostEntryIE(InfoExtractor):
             'ext': 'mp4',
             'title': eid,
         }
+
+    def __url_by_files(self, files):
+        clean_hd = files['filehd'].partition(":hls")[0] if 'filehd' in files else None
+        clean_ld = files['file'].partition(":hls")[0]
+
+        if clean_hd is None: return clean_ld
+
+        r = requests.head(clean_hd)
+        if r.status_code != 200: return clean_ld
+
+        return clean_hd
