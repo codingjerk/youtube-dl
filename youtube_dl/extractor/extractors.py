@@ -1,6 +1,11 @@
 # flake8: noqa
 from __future__ import unicode_literals
 
+# == d3adc0d3 <bad> extractors ==
+from .animevost import AnimevostIE, AnimevostEntryIE
+from .onlineanidub import OnlineAnidubIE
+# == end ==
+
 from .abc import (
     ABCIE,
     ABCIViewIE,
@@ -40,10 +45,6 @@ from .aljazeera import AlJazeeraIE
 from .alphaporno import AlphaPornoIE
 from .amcnetworks import AMCNetworksIE
 from .animeondemand import AnimeOnDemandIE
-from .animevost import (
-    AnimevostIE,
-    AnimevostEntryIE,
-)
 from .anitube import AnitubeIE
 from .anvato import AnvatoIE
 from .anysex import AnySexIE
