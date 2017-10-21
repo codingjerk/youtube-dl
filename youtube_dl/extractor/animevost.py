@@ -43,7 +43,7 @@ class AnimevostIE(InfoExtractor):
         'playlist_mincount': 57,
     }]
 
-    _VALID_URL = r'http://animevost\.org/tip/[-\w\d]+/(\d+)-[-\w\d]+\.html'
+    _VALID_URL = r'http://animevost\.org/tip/[-\w\d]+/([,\d\w]+)-[-\w\d]+\.html'
     _TITLE_PATTERN = r'<meta property="og:title" content="([-\s\d\w/:!()]+)\['
     _DATA_PATTERN = r'var data = \{([-\d\w\s,":]+)\};'
 
