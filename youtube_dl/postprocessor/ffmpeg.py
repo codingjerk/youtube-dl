@@ -44,7 +44,7 @@ ACODECS = {
     'aac': 'aac',
     'flac': 'flac',
     'm4a': 'aac',
-    'opus': 'opus',
+    'opus': 'libopus',
     'vorbis': 'libvorbis',
     'wav': None,
 }
@@ -542,7 +542,7 @@ class FFmpegFixupM3u8PP(FFmpegPostProcessor):
             temp_filename = prepend_extension(filename, 'temp')
 
             options = ['-c', 'copy', '-f', 'mp4', '-bsf:a', 'aac_adtstoasc']
-            self._downloader.to_screen('[ffmpeg] Fixing malformated aac bitstream in "%s"' % filename)
+            self._downloader.to_screen('[ffmpeg] Fixing malformed AAC bitstream in "%s"' % filename)
             self.run_ffmpeg(filename, temp_filename, options)
 
             os.remove(encodeFilename(filename))
@@ -585,7 +585,7 @@ class FFmpegSubtitlesConvertorPP(FFmpegPostProcessor):
                 dfxp_file = old_file
                 srt_file = subtitles_filename(filename, lang, 'srt')
 
-                with io.open(dfxp_file, 'rt', encoding='utf-8') as f:
+                with open(dfxp_file, 'rb') as f:
                     srt_data = dfxp2srt(f.read())
 
                 with io.open(srt_file, 'wt', encoding='utf-8') as f:

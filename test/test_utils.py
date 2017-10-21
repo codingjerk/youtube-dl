@@ -98,6 +98,7 @@ from youtube_dl.compat import (
     compat_chr,
     compat_etree_fromstring,
     compat_getenv,
+    compat_os_name,
     compat_setenv,
     compat_urlparse,
     compat_parse_qs,
@@ -278,6 +279,7 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(unescapeHTML('&#47;'), '/')
         self.assertEqual(unescapeHTML('&eacute;'), 'é')
         self.assertEqual(unescapeHTML('&#2013266066;'), '&#2013266066;')
+        self.assertEqual(unescapeHTML('&a&quot;'), '&a"')
         # HTML5 entities
         self.assertEqual(unescapeHTML('&period;&apos;'), '.\'')
 
@@ -448,7 +450,9 @@ class TestUtil(unittest.TestCase):
 
     def test_shell_quote(self):
         args = ['ffmpeg', '-i', encodeFilename('ñ€ß\'.mp4')]
-        self.assertEqual(shell_quote(args), """ffmpeg -i 'ñ€ß'"'"'.mp4'""")
+        self.assertEqual(
+            shell_quote(args),
+            """ffmpeg -i 'ñ€ß'"'"'.mp4'""" if compat_os_name != 'nt' else '''ffmpeg -i "ñ€ß'.mp4"''')
 
     def test_str_to_int(self):
         self.assertEqual(str_to_int('123,456'), 123456)
@@ -932,7 +936,7 @@ class TestUtil(unittest.TestCase):
     def test_args_to_str(self):
         self.assertEqual(
             args_to_str(['foo', 'ba/r', '-baz', '2 be', '']),
-            'foo ba/r -baz \'2 be\' \'\''
+            'foo ba/r -baz \'2 be\' \'\'' if compat_os_name != 'nt' else 'foo ba/r -baz "2 be" ""'
         )
 
     def test_parse_filesize(self):
@@ -1060,7 +1064,7 @@ ffmpeg version 2.4.4 Copyright (c) 2000-2014 the FFmpeg ...'''), '2.4.4')
                     <p begin="3" dur="-1">Ignored, three</p>
                 </div>
             </body>
-            </tt>'''
+            </tt>'''.encode('utf-8')
         srt_data = '''1
 00:00:00,000 --> 00:00:01,000
 The following line contains Chinese characters and special symbols
@@ -1085,7 +1089,7 @@ Line
                     <p begin="0" end="1">The first line</p>
                 </div>
             </body>
-            </tt>'''
+            </tt>'''.encode('utf-8')
         srt_data = '''1
 00:00:00,000 --> 00:00:01,000
 The first line
@@ -1111,7 +1115,7 @@ The first line
       <p style="s1" tts:textDecoration="underline" begin="00:00:09.56" id="p2" end="00:00:12.36"><span style="s2" tts:color="lime">inner<br /> </span>style</p>
     </div>
   </body>
-</tt>'''
+</tt>'''.encode('utf-8')
         srt_data = '''1
 00:00:02,080 --> 00:00:05,839
 <font color="white" face="sansSerif" size="16">default style<font color="red">custom style</font></font>
@@ -1133,6 +1137,26 @@ part 3</font></u>
 
 '''
         self.assertEqual(dfxp2srt(dfxp_data_with_style), srt_data)
+
+        dfxp_data_non_utf8 = '''<?xml version="1.0" encoding="UTF-16"?>
+            <tt xmlns="http://www.w3.org/ns/ttml" xml:lang="en" xmlns:tts="http://www.w3.org/ns/ttml#parameter">
+            <body>
+                <div xml:lang="en">
+                    <p begin="0" end="1">Line 1</p>
+                    <p begin="1" end="2">第二行</p>
+                </div>
+            </body>
+            </tt>'''.encode('utf-16')
+        srt_data = '''1
+00:00:00,000 --> 00:00:01,000
+Line 1
+
+2
+00:00:01,000 --> 00:00:02,000
+第二行
+
+'''
+        self.assertEqual(dfxp2srt(dfxp_data_non_utf8), srt_data)
 
     def test_cli_option(self):
         self.assertEqual(cli_option({'proxy': '127.0.0.1:3128'}, '--proxy', 'proxy'), ['--proxy', '127.0.0.1:3128'])
@@ -1179,6 +1203,10 @@ part 3</font></u>
             cli_bool_option(
                 {'nocheckcertificate': False}, '--check-certificate', 'nocheckcertificate', 'false', 'true', '='),
             ['--check-certificate=true'])
+        self.assertEqual(
+            cli_bool_option(
+                {}, '--check-certificate', 'nocheckcertificate', 'false', 'true', '='),
+            [])
 
     def test_ohdave_rsa_encrypt(self):
         N = 0xab86b6371b5318aaa1d3c9e612a9f1264f372323c8c0f19875b5fc3b3fd3afcc1e5bec527aa94bfa85bffc157e4245aebda05389a5357b75115ac94f074aefcd
@@ -1227,6 +1255,12 @@ part 3</font></u>
         self.assertEqual(get_element_by_attribute('class', 'foo bar', html), 'nice')
         self.assertEqual(get_element_by_attribute('class', 'foo', html), None)
         self.assertEqual(get_element_by_attribute('class', 'no-such-foo', html), None)
+
+        html = '''
+            <div itemprop="author" itemscope>foo</div>
+        '''
+
+        self.assertEqual(get_element_by_attribute('itemprop', 'author', html), 'foo')
 
     def test_get_elements_by_class(self):
         html = '''

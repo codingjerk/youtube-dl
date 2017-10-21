@@ -29,15 +29,16 @@ from ..compat import (
 class BBCCoUkIE(InfoExtractor):
     IE_NAME = 'bbc.co.uk'
     IE_DESC = 'BBC iPlayer'
-    _ID_REGEX = r'[pb][\da-z]{7}'
+    _ID_REGEX = r'[pbw][\da-z]{7}'
     _VALID_URL = r'''(?x)
                     https?://
                         (?:www\.)?bbc\.co\.uk/
                         (?:
                             programmes/(?!articles/)|
                             iplayer(?:/[^/]+)?/(?:episode/|playlist/)|
-                            music/clips[/#]|
-                            radio/player/
+                            music/(?:clips|audiovideo/popular)[/#]|
+                            radio/player/|
+                            events/[^/]+/play/[^/]+/
                         )
                         (?P<id>%s)(?!/(?:episodes|broadcasts|clips))
                     ''' % _ID_REGEX
@@ -229,8 +230,13 @@ class BBCCoUkIE(InfoExtractor):
         }, {
             'url': 'http://www.bbc.co.uk/radio/player/p03cchwf',
             'only_matching': True,
-        }
-    ]
+        }, {
+            'url': 'https://www.bbc.co.uk/music/audiovideo/popular#p055bc55',
+            'only_matching': True,
+        }, {
+            'url': 'http://www.bbc.co.uk/programmes/w3csv1y9',
+            'only_matching': True,
+        }]
 
     _USP_RE = r'/([^/]+?)\.ism(?:\.hlsv2\.ism)?/[^/]+\.m3u8'
 
@@ -380,7 +386,7 @@ class BBCCoUkIE(InfoExtractor):
                             m3u8_id=format_id, fatal=False))
                         if re.search(self._USP_RE, href):
                             usp_formats = self._extract_m3u8_formats(
-                                re.sub(self._USP_RE, r'/\1.ism/\1.m3u8', href),
+                                re.sub(self._USP_RE, r'/\1\.ism/\1\.m3u8', href),
                                 programme_id, ext='mp4', entry_protocol='m3u8_native',
                                 m3u8_id=format_id, fatal=False)
                             for f in usp_formats:
@@ -522,6 +528,12 @@ class BBCCoUkIE(InfoExtractor):
         group_id = self._match_id(url)
 
         webpage = self._download_webpage(url, group_id, 'Downloading video page')
+
+        error = self._search_regex(
+            r'<div\b[^>]+\bclass=["\']smp__message delta["\'][^>]*>([^<]+)<',
+            webpage, 'error', default=None)
+        if error:
+            raise ExtractorError(error, expected=True)
 
         programme_id = None
         duration = None
