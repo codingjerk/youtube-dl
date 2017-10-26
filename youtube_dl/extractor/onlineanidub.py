@@ -10,8 +10,8 @@ from .common import InfoExtractor
 
 
 class OnlineAnidubIE(InfoExtractor):
-    _VALID_URL = r'http://online\.anidub\.com/anime_tv/full/([,\w\d])+-[-_\d\w]+\.html'
-    _TITLE_PATTERN = r'<title>([\s\d\w/]+) \['
+    _VALID_URL = r'http://online\.anidub\.com/anime_tv/full/([,\w\d]+)-[-_\d\w]+\.html'
+    _TITLE_PATTERN = r'<title>([\s\d\w/«»-]+) \['
     _SERIES_PATTERN = r'<option([\s\n\r]+selected="selected")?[\s\n\r]+value=["\'](http://online.anidub.com/[^"\']+)["\']>([^<]+)</option>'
 
     def _real_extract(self, url):
