@@ -5,6 +5,7 @@ import re
 from .common import InfoExtractor
 from ..compat import (
     compat_HTTPError,
+    compat_kwargs,
     compat_str,
     compat_urllib_request,
     compat_urlparse,
@@ -17,6 +18,7 @@ from ..utils import (
     int_or_none,
     js_to_json,
     sanitized_Request,
+    try_get,
     unescapeHTML,
     urlencode_postdata,
 )
@@ -57,16 +59,20 @@ class UdemyIE(InfoExtractor):
         # no url in outputs format entry
         'url': 'https://www.udemy.com/learn-web-development-complete-step-by-step-guide-to-success/learn/v4/t/lecture/4125812',
         'only_matching': True,
+    }, {
+        # only outputs rendition
+        'url': 'https://www.udemy.com/how-you-can-help-your-local-community-5-amazing-examples/learn/v4/t/lecture/3225750?start=0',
+        'only_matching': True,
     }]
 
     def _extract_course_info(self, webpage, video_id):
         course = self._parse_json(
             unescapeHTML(self._search_regex(
-                r'ng-init=["\'].*\bcourse=({.+?});', webpage, 'course', default='{}')),
+                r'ng-init=["\'].*\bcourse=({.+?})[;"\']',
+                webpage, 'course', default='{}')),
             video_id, fatal=False) or {}
         course_id = course.get('id') or self._search_regex(
-            (r'&quot;id&quot;\s*:\s*(\d+)', r'data-course-id=["\'](\d+)'),
-            webpage, 'course id')
+            r'data-course-id=["\'](\d+)', webpage, 'course id')
         return course_id, course.get('title')
 
     def _enroll_course(self, base_url, webpage, course_id):
@@ -100,7 +106,7 @@ class UdemyIE(InfoExtractor):
             % (course_id, lecture_id),
             lecture_id, 'Downloading lecture JSON', query={
                 'fields[lecture]': 'title,description,view_html,asset',
-                'fields[asset]': 'asset_type,stream_url,thumbnail_url,download_urls,data',
+                'fields[asset]': 'asset_type,stream_url,thumbnail_url,download_urls,stream_urls,captions,data',
             })
 
     def _handle_error(self, response):
@@ -113,6 +119,11 @@ class UdemyIE(InfoExtractor):
             if error_data:
                 error_str += ' - %s' % error_data.get('formErrors')
             raise ExtractorError(error_str, expected=True)
+
+    def _download_webpage_handle(self, *args, **kwargs):
+        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/603.2.4 (KHTML, like Gecko) Version/10.1.1 Safari/603.2.4'
+        return super(UdemyIE, self)._download_webpage_handle(
+            *args, **compat_kwargs(kwargs))
 
     def _download_json(self, url_or_request, *args, **kwargs):
         headers = {
@@ -140,7 +151,7 @@ class UdemyIE(InfoExtractor):
         self._login()
 
     def _login(self):
-        (username, password) = self._get_login_info()
+        username, password = self._get_login_info()
         if username is None:
             return
 
@@ -164,7 +175,7 @@ class UdemyIE(InfoExtractor):
         })
 
         response = self._download_webpage(
-            self._LOGIN_URL, None, 'Logging in as %s' % username,
+            self._LOGIN_URL, None, 'Logging in',
             data=urlencode_postdata(login_form),
             headers={
                 'Referer': self._ORIGIN_URL,
@@ -257,6 +268,11 @@ class UdemyIE(InfoExtractor):
                 video_url = source.get('file') or source.get('src')
                 if not video_url or not isinstance(video_url, compat_str):
                     continue
+                if source.get('type') == 'application/x-mpegURL' or determine_ext(video_url) == 'm3u8':
+                    formats.extend(self._extract_m3u8_formats(
+                        video_url, video_id, 'mp4', entry_protocol='m3u8_native',
+                        m3u8_id='hls', fatal=False))
+                    continue
                 format_id = source.get('label')
                 f = {
                     'url': video_url,
@@ -288,9 +304,25 @@ class UdemyIE(InfoExtractor):
                     'url': src,
                 })
 
-        download_urls = asset.get('download_urls')
-        if isinstance(download_urls, dict):
-            extract_formats(download_urls.get('Video'))
+        for url_kind in ('download', 'stream'):
+            urls = asset.get('%s_urls' % url_kind)
+            if isinstance(urls, dict):
+                extract_formats(urls.get('Video'))
+
+        captions = asset.get('captions')
+        if isinstance(captions, list):
+            for cc in captions:
+                if not isinstance(cc, dict):
+                    continue
+                cc_url = cc.get('url')
+                if not cc_url or not isinstance(cc_url, compat_str):
+                    continue
+                lang = try_get(cc, lambda x: x['locale']['locale'], compat_str)
+                sub_dict = (automatic_captions if cc.get('source') == 'auto'
+                            else subtitles)
+                sub_dict.setdefault(lang or 'en', []).append({
+                    'url': cc_url,
+                })
 
         view_html = lecture.get('view_html')
         if view_html:
@@ -345,6 +377,12 @@ class UdemyIE(InfoExtractor):
                     transform_source=lambda s: js_to_json(unescapeHTML(s)),
                     fatal=False)
                 extract_subtitles(text_tracks)
+
+        if not formats and outputs:
+            for format_id, output in outputs.items():
+                f = extract_output_format(output, format_id)
+                if f.get('url'):
+                    formats.append(f)
 
         self._sort_formats(formats, field_preference=('height', 'width', 'tbr', 'format_id'))
 

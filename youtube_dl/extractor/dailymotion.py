@@ -1,12 +1,16 @@
 # coding: utf-8
 from __future__ import unicode_literals
 
-import re
-import json
+import base64
+import hashlib
 import itertools
+import json
+import random
+import re
+import string
 
 from .common import InfoExtractor
-
+from ..compat import compat_struct_pack
 from ..utils import (
     determine_ext,
     error_to_compat_str,
@@ -64,7 +68,6 @@ class DailymotionIE(DailymotionBaseInfoExtractor):
             'uploader': 'Deadline',
             'uploader_id': 'x1xm8ri',
             'age_limit': 0,
-            'view_count': int,
         },
     }, {
         'url': 'https://www.dailymotion.com/video/x2iuewm_steam-machine-models-pricing-listed-on-steam-store-ign-news_videogames',
@@ -167,6 +170,17 @@ class DailymotionIE(DailymotionBaseInfoExtractor):
             player = self._parse_json(player_v5, video_id)
             metadata = player['metadata']
 
+            if metadata.get('error', {}).get('type') == 'password_protected':
+                password = self._downloader.params.get('videopassword')
+                if password:
+                    r = int(metadata['id'][1:], 36)
+                    us64e = lambda x: base64.urlsafe_b64encode(x).decode().strip('=')
+                    t = ''.join(random.choice(string.ascii_letters) for i in range(10))
+                    n = us64e(compat_struct_pack('I', r))
+                    i = us64e(hashlib.md5(('%s%d%s' % (password, r, t)).encode()).digest())
+                    metadata = self._download_json(
+                        'http://www.dailymotion.com/player/metadata/video/p' + i + t + n, video_id)
+
             self._check_error(metadata)
 
             formats = []
@@ -180,9 +194,12 @@ class DailymotionIE(DailymotionBaseInfoExtractor):
                         continue
                     ext = mimetype2ext(type_) or determine_ext(media_url)
                     if ext == 'm3u8':
-                        formats.extend(self._extract_m3u8_formats(
+                        m3u8_formats = self._extract_m3u8_formats(
                             media_url, video_id, 'mp4', preference=-1,
-                            m3u8_id='hls', fatal=False))
+                            m3u8_id='hls', fatal=False)
+                        for f in m3u8_formats:
+                            f['url'] = f['url'].split('#')[0]
+                            formats.append(f)
                     elif ext == 'f4m':
                         formats.extend(self._extract_f4m_formats(
                             media_url, video_id, preference=-1, f4m_id='hds', fatal=False))
@@ -299,8 +316,8 @@ class DailymotionIE(DailymotionBaseInfoExtractor):
 
     def _check_error(self, info):
         error = info.get('error')
-        if info.get('error') is not None:
-            title = error['title']
+        if error:
+            title = error.get('title') or error['message']
             # See https://developer.dailymotion.com/api#access-error
             if error.get('code') == 'DM007':
                 self.raise_geo_restricted(msg=title)
@@ -412,53 +429,4 @@ class DailymotionUserIE(DailymotionPlaylistIE):
             'id': user,
             'title': full_user,
             'entries': self._extract_entries(user),
-        }
-
-
-class DailymotionCloudIE(DailymotionBaseInfoExtractor):
-    _VALID_URL_PREFIX = r'https?://api\.dmcloud\.net/(?:player/)?embed/'
-    _VALID_URL = r'%s[^/]+/(?P<id>[^/?]+)' % _VALID_URL_PREFIX
-    _VALID_EMBED_URL = r'%s[^/]+/[^\'"]+' % _VALID_URL_PREFIX
-
-    _TESTS = [{
-        # From http://www.francetvinfo.fr/economie/entreprises/les-entreprises-familiales-le-secret-de-la-reussite_933271.html
-        # Tested at FranceTvInfo_2
-        'url': 'http://api.dmcloud.net/embed/4e7343f894a6f677b10006b4/556e03339473995ee145930c?auth=1464865870-0-jyhsm84b-ead4c701fb750cf9367bf4447167a3db&autoplay=1',
-        'only_matching': True,
-    }, {
-        # http://www.francetvinfo.fr/societe/larguez-les-amarres-le-cobaturage-se-developpe_980101.html
-        'url': 'http://api.dmcloud.net/player/embed/4e7343f894a6f677b10006b4/559545469473996d31429f06?auth=1467430263-0-90tglw2l-a3a4b64ed41efe48d7fccad85b8b8fda&autoplay=1',
-        'only_matching': True,
-    }]
-
-    @classmethod
-    def _extract_dmcloud_url(cls, webpage):
-        mobj = re.search(r'<iframe[^>]+src=[\'"](%s)[\'"]' % cls._VALID_EMBED_URL, webpage)
-        if mobj:
-            return mobj.group(1)
-
-        mobj = re.search(
-            r'<input[^>]+id=[\'"]dmcloudUrlEmissionSelect[\'"][^>]+value=[\'"](%s)[\'"]' % cls._VALID_EMBED_URL,
-            webpage)
-        if mobj:
-            return mobj.group(1)
-
-    def _real_extract(self, url):
-        video_id = self._match_id(url)
-
-        webpage = self._download_webpage_no_ff(url, video_id)
-
-        title = self._html_search_regex(r'<title>([^>]+)</title>', webpage, 'title')
-
-        video_info = self._parse_json(self._search_regex(
-            r'var\s+info\s*=\s*([^;]+);', webpage, 'video info'), video_id)
-
-        # TODO: parse ios_url, which is in fact a manifest
-        video_url = video_info['mp4_url']
-
-        return {
-            'id': video_id,
-            'url': video_url,
-            'title': title,
-            'thumbnail': video_info.get('thumbnail_url'),
         }
